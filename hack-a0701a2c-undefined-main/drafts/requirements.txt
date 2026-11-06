@@ -1,0 +1,4 @@
+google-genai
+scikit-learn==1.6.1
+python-dotenv
+pytest
