@@ -1,40 +1,40 @@
 # Support Copilot
 
-Сервис триажа обращений игроков Grand Mobile (Decentrathon 6.0, команда Undefined). Для каждого тикета он определяет язык, категорию и приоритет, извлекает факты (ник, сервер, номера правил, доказательства) и находит подходящие пункты правил игры. Затем готовит черновик ответа игроку с цитатами этих пунктов и решает, можно ли отправить ответ автоматически или тикет нужно передать человеку (`needs_human` с причинами). Всё доступно через `POST /triage`.
+A triage service for Grand Mobile player support tickets (Decentrathon 6.0, team Undefined). For each ticket it detects the language, category and priority, extracts facts (nickname, server, rule numbers, evidence) and finds the matching game rules. It then prepares a draft reply to the player that cites those rules, and decides whether the reply can be sent automatically or the ticket must go to a human (`needs_human` with reasons). Everything is available through `POST /triage`.
 
-## Как это работает
+## How it works
 
 ```
-тикет
-  → classify            категория, приоритет, уверенность (правила + TF-IDF/логрегрессия)
-  → extract_facts       ник, сервер, номера правил из текста, наличие доказательств
-  → retrieve            поиск пунктов правил: BM25 + эмбеддинги multilingual-e5 + подсказки
-                        (номера правил из текста и правила категории), слияние взвешенным RRF
-  → generate_draft      черновик ответа на Gemini со structured output;
-                        цитировать можно только найденные пункты
-  → валидатор           цитаты должны быть из выдачи поиска, в тексте нет запрещённых обещаний
-                        (разбан, возврат средств, наказание другого игрока)
-  → guards              платежи, апелляции, взлом аккаунта, категории «всегда человеку»,
-                        низкая уверенность, сбой генерации
-  → ответ               lang, category, priority, extracted, draft_reply, needs_human, reasons
+ticket
+  → classify            category, priority, confidence (rules + TF-IDF/logistic regression)
+  → extract_facts       nickname, server, rule numbers from the text, presence of evidence
+  → retrieve            rule search: BM25 + multilingual-e5 embeddings + hints
+                        (rule numbers from the text and category rules), merged with weighted RRF
+  → generate_draft      draft reply with Gemini structured output;
+                        only retrieved rules may be cited
+  → validator           citations must come from the search results, the text contains no forbidden
+                        promises (unban, refund, punishing another player)
+  → guards              payments, appeals, account hacking, "always to a human" categories,
+                        low confidence, generation failure
+  → response            lang, category, priority, extracted, draft_reply, needs_human, reasons
 ```
 
-## Ключевые цифры
+## Key numbers
 
-Подробности и условия замеров — в [report/retrieval_triage.md](report/retrieval_triage.md).
+Details and measurement conditions are in [report/retrieval_triage.md](report/retrieval_triage.md).
 
-| Метрика | Значение |
+| Metric | Value |
 |---|---|
-| Recall@5 поиска правил (train, 5000 жалоб) | 0.558 (valid: 0.48) |
-| needs_human (valid, 1000 тикетов) | 48.3% |
-| Выдуманные цитаты в ответах | 0 |
-| Запрещённые обещания в ответах | 0 |
-| Задержка тикета без LLM, p95 | 0.25 с |
-| Задержка вызова LLM, p50 | ~1 с |
+| Rule retrieval Recall@5 (train, 5000 complaints) | 0.558 (valid: 0.48) |
+| needs_human (valid, 1000 tickets) | 48.3% |
+| Fabricated citations in replies | 0 |
+| Forbidden promises in replies | 0 |
+| Ticket latency without LLM, p95 | 0.25 s |
+| LLM call latency, p50 | ~1 s |
 
-## Запуск
+## Getting started
 
-Нужен Python 3.9.
+Python 3.9 is required.
 
 ```
 python3.9 -m venv .venv
@@ -43,18 +43,18 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-В `.env` задайте:
+Set the following in `.env`:
 
-* `DATA_DIR` — абсолютный путь к папке с данными хакатона (вне репозитория);
-* `RETRIEVAL_EMBEDDINGS` — `on` для гибридного поиска BM25 + эмбеддинги, `off` только для BM25;
-* `GEMINI_API_KEY` — для черновиков LLM задайте GEMINI_API_KEY; без ключа сервис работает в режиме шаблонов (классификация, поиск правил и guards работают полностью);
-* `DRAFT_MODEL` — модель Gemini для черновиков ответа;
-* `DRAFT_RPM` — сколько вызовов LLM в минуту разрешено черновикам (по умолчанию 12): вызовы ждут свободный слот, а не получают 429;
-* `JUDGE_MODEL` — модель Gemini для LLM-судьи в оценке, отличная от `DRAFT_MODEL`;
-* `HF_TOKEN` — токен Hugging Face для загрузки модели эмбеддингов;
-* `RRF_WEIGHT_BM25`, `RRF_WEIGHT_E5`, `RRF_WEIGHT_HINTS` — веса слияния результатов поиска (по умолчанию 1.0, 1.0, 2.0).
+* `DATA_DIR` — absolute path to the hackathon data folder (outside the repository);
+* `RETRIEVAL_EMBEDDINGS` — `on` for hybrid BM25 + embeddings search, `off` for BM25 only;
+* `GEMINI_API_KEY` — needed for LLM drafts; without a key the service runs in template mode (classification, rule retrieval and guards still work fully);
+* `DRAFT_MODEL` — Gemini model for reply drafts;
+* `DRAFT_RPM` — how many LLM calls per minute drafts are allowed (default 12): calls wait for a free slot instead of getting a 429;
+* `JUDGE_MODEL` — Gemini model for the LLM judge in evaluation, different from `DRAFT_MODEL`;
+* `HF_TOKEN` — Hugging Face token for downloading the embedding model;
+* `RRF_WEIGHT_BM25`, `RRF_WEIGHT_E5`, `RRF_WEIGHT_HINTS` — weights for merging search results (defaults 1.0, 1.0, 2.0).
 
-Команды выполняются в активированном окружении:
+Commands are run inside the activated environment:
 
 ```
 make serve
@@ -62,59 +62,59 @@ make predict IN=$DATA_DIR/tickets_valid.jsonl OUT=/tmp/pred_valid.jsonl
 make test
 ```
 
-`make serve` поднимает сервис на `http://localhost:8000` (`POST /triage`, `GET /health`). `make predict` пишет по строке JSON на каждый тикет: `ticket_id` и ответ `/triage`.
+`make serve` starts the service at `http://localhost:8000` (`POST /triage`, `GET /health`). `make predict` writes one JSON line per ticket: `ticket_id` and the `/triage` response.
 
-На бесплатном ключе Gemini `make predict` идёт примерно со скоростью `DRAFT_RPM` тикетов в минуту: в пакетном режиме вызовы ждут слот без ограничения. В `/triage` ожидание слота входит в 5 с на вызов, и если слота нет, черновик собирается по шаблону и уходит человеку.
+On a free Gemini key, `make predict` runs at roughly `DRAFT_RPM` tickets per minute: in batch mode calls wait for a slot without a limit. In `/triage`, waiting for a slot counts toward the 5 s per call, and if no slot is free the draft is built from a template and sent to a human.
 
-Модель `classify` (TF-IDF по символам + логистическая регрессия) в репозитории не хранится. Она обучается при первом старте сервиса или `make predict` из `DATA_DIR/tickets_train.jsonl.gz` (около 12 с) и сохраняется в `.cache/classifier.joblib`. Без `DATA_DIR` классификация работает только на правилах, в лог пишется предупреждение. Нужен Python 3.9 и `scikit-learn==1.6.1`: модель, обученная другой версией sklearn, загружается с предупреждением и работает хуже.
+The `classify` model (character TF-IDF + logistic regression) is not stored in the repository. It is trained on the first start of the service or `make predict` from `DATA_DIR/tickets_train.jsonl.gz` (about 12 s) and saved to `.cache/classifier.joblib`. Without `DATA_DIR`, classification uses rules only and a warning is logged. Python 3.9 and `scikit-learn==1.6.1` are required: a model trained with another sklearn version loads with a warning and performs worse.
 
-## Ограничения
+## Limitations
 
-* **Бесплатный тариф Gemini.** Есть лимит запросов в минуту, а при перегрузке провайдер отвечает 503. В обоих случаях сервис не падает: черновик собирается по шаблону, и тикет уходит человеку с причиной «черновик не сгенерирован». Из-за этого задержка с LLM нестабильна, и в финальном прогоне при перегрузке Gemini 82% черновиков ушли в шаблон.
-* **Мало kk и uz в данных.** Казахских и узбекских тикетов в выборке единицы, поэтому качество на этих языках оценено в основном на синтетических тестах.
-* **Шаблоны на uz не проверены носителем.** Казахские шаблоны и формы проверены носителем, узбекские — нет.
+* **Free Gemini tier.** There is a requests-per-minute limit, and under load the provider returns 503. In both cases the service does not crash: the draft is built from a template and the ticket goes to a human with the reason "draft not generated". Because of this, latency with the LLM is unstable, and in the final run, with Gemini overloaded, 82% of drafts fell back to templates.
+* **Few kk and uz tickets in the data.** Kazakh and Uzbek tickets are rare in the dataset, so quality in these languages was evaluated mostly on synthetic tests.
+* **uz templates not checked by a native speaker.** Kazakh templates and forms were checked by a native speaker, Uzbek ones were not.
 
-## Оценка
+## Evaluation
 
-Харнесс в `evaluation/` (описание в `evaluation/README.md`), отчёт в [report/README.md](report/README.md).
+The harness is in `evaluation/` (described in `evaluation/README.md`), the report is in [report/README.md](report/README.md).
 
 ```
-make eval            # прогон valid через /triage, метрики в results/<время>/summary.json
-make eval-gold       # + accuracy категории и macro-F1 приоритета по золотому набору gold.jsonl
-                     #   золотой набор (gold.jsonl) — внутренний, в репозиторий не входит
-make eval-latency    # задержка без очереди (1 поток, 200 тикетов)
-python -m evaluation.judge --pred results/<run>/pred.jsonl --n 40   # LLM-судья, Gemini
+make eval            # run valid through /triage, metrics in results/<time>/summary.json
+make eval-gold       # + category accuracy and priority macro-F1 on the gold set gold.jsonl
+                     #   the gold set (gold.jsonl) is internal and not included in the repository
+make eval-latency    # latency without queueing (1 thread, 200 tickets)
+python -m evaluation.judge --pred results/<run>/pred.jsonl --n 40   # LLM judge, Gemini
 ```
 
-`results/`, `gold.jsonl` и таблицы с текстами игроков в репозиторий не попадают (`.gitignore`).
+`results/`, `gold.jsonl` and tables with player texts are not committed (`.gitignore`).
 
-## Отчёт
+## Report
 
-* [report/README.md](report/README.md) — общий отчёт команды.
-* [report/retrieval_triage.md](report/retrieval_triage.md) — поиск правил, валидатор цитат, needs_human, сервис `/triage` и итоговые метрики.
-* [report/drafts.md](report/drafts.md) — генерация черновиков ответа.
-* [report/evaluation.md](report/evaluation.md) — методика и результаты оценки.
+* [report/README.md](report/README.md) — the team's overall report.
+* [report/retrieval_triage.md](report/retrieval_triage.md) — rule retrieval, citation validator, needs_human, the `/triage` service and final metrics.
+* [report/drafts.md](report/drafts.md) — reply draft generation.
+* [report/evaluation.md](report/evaluation.md) — evaluation method and results.
 
-## Источники и лицензии
+## Sources and licenses
 
-### Данные
+### Data
 
-Датасет Grand Mobile × Decentrathon 6.0 (кейс Support Copilot): `tickets_train.jsonl.gz`,
-`tickets_valid.jsonl`, `rules.json`, `taxonomy.json`. Используется только для решения кейса
-в рамках хакатона, **в репозитории не хранится** (путь задаётся в `DATA_DIR`) и удаляется в
-течение 14 дней после объявления победителей, как требуют условия.
+Grand Mobile × Decentrathon 6.0 dataset (Support Copilot case): `tickets_train.jsonl.gz`,
+`tickets_valid.jsonl`, `rules.json`, `taxonomy.json`. Used only to solve the case
+within the hackathon, **not stored in the repository** (the path is set in `DATA_DIR`) and deleted
+within 14 days after the winners are announced, as the terms require.
 
-### Модели
+### Models
 
-| Модель | Где используется | Условия |
+| Model | Where it is used | Terms |
 |---|---|---|
-| `gemini-3.1-flash-lite` (Google) | генерация черновиков | Gemini API, проприетарная, [Gemini API Terms](https://ai.google.dev/gemini-api/terms) |
-| `gemini-3.5-flash` (Google) | LLM-судья в оценке (не часть сервиса) | то же |
-| `intfloat/multilingual-e5-small` | эмбеддинги для поиска правил | MIT |
+| `gemini-3.1-flash-lite` (Google) | draft generation | Gemini API, proprietary, [Gemini API Terms](https://ai.google.dev/gemini-api/terms) |
+| `gemini-3.5-flash` (Google) | LLM judge in evaluation (not part of the service) | same |
+| `intfloat/multilingual-e5-small` | embeddings for rule retrieval | MIT |
 
-### Библиотеки
+### Libraries
 
-| Библиотека | Лицензия |
+| Library | License |
 |---|---|
 | FastAPI | MIT |
 | Uvicorn | BSD-3-Clause |
@@ -126,6 +126,6 @@ python -m evaluation.judge --pred results/<run>/pred.jsonl --n 40   # LLM-суд
 | NumPy | BSD-3-Clause |
 | sentence-transformers | Apache-2.0 |
 | google-genai | Apache-2.0 |
-| scikit-learn, joblib (`data_prep`, поиск примеров в `drafts`) | BSD-3-Clause |
-| PyTorch (ставится через sentence-transformers) | BSD-3-Clause |
-| transformers (ставится через sentence-transformers) | Apache-2.0 |
+| scikit-learn, joblib (`data_prep`, example search in `drafts`) | BSD-3-Clause |
+| PyTorch (installed via sentence-transformers) | BSD-3-Clause |
+| transformers (installed via sentence-transformers) | Apache-2.0 |
